@@ -301,24 +301,25 @@ ORDER BY putouts DESC;
 	A - Chris Owings has a success rate of 91%--impressive.
 */
 
-SELECT DISTINCT p.namefirst || ' ' || p.namelast AS playername,
-	SUM(b.sb) AS stolen,
-	SUM(b.sb + b.cs) AS attempts,
+SELECT DISTINCT -- b.playerid,		-- MICHAEL USED THE b.playerid - DOES THIS CHANGE THE ANSWER?
+	p.namefirst || ' ' || p.namelast AS playername,
+	SUM(b.sb) 					     AS stolen,
+	SUM(b.sb + b.cs) 				 AS attempts,
 	100 * SUM(b.sb) / SUM(b.sb + b.cs) AS SB_pct
 FROM batting b
 	INNER JOIN people p
 		ON b.playerid = p.playerid
 WHERE yearid = 2016
 GROUP BY 1
-HAVING SUM(b.sb) >= 20
-ORDER BY 2 DESC;
+HAVING SUM(b.sb + b.cs) >= 20
+ORDER BY 4 DESC;
 
 
 	-- ALEX ZHANG HAD:
 	SELECT 
 		namefirst||' '||namelast AS name,
 		sb, 
-		sb+cs AS num_attempts,
+		sb+cs 					 AS num_attempts,
 		ROUND(sb*100.00/(sb+cs),2) AS sb_pct
 	FROM Batting
 	LEFT JOIN people
@@ -327,6 +328,21 @@ ORDER BY 2 DESC;
 		AND (sb+cs)>=20
 	ORDER BY sb_pct DESC
 	LIMIT 1;
+
+
+	-- JAMES GILBERT DID IT WITH + AND NO GROUP BY:
+	SELECT 
+		PEOPLE.NAMEFIRST || ' ' || PEOPLE.NAMELAST AS PLAYER_NAME,
+		SB AS STOLEN_BASES,
+		CS AS CAUGHT_STEALING,
+		SB + CS AS ATTEMPTS,
+		ROUND(100.0*SB/(SB+CS),2) AS STOLEN_PERCE
+	FROM BATTING
+	LEFT JOIN PEOPLE
+	USING (PLAYERID)
+	WHERE YEARID = 2016 AND SB+CS>=20
+	ORDER BY STOLEN_PERCE DESC;
+
 
 
 /*
@@ -344,6 +360,7 @@ FROM teams t
 WHERE t.WSWin = 'N'
 	AND (t.yearid >= 1970
 			AND t.yearid <= 2016)
+	AND t.yearid NOT IN (1981, 1994) -- STRIKE YEARS		
 ORDER BY t.W DESC
 LIMIT 1;
 
@@ -357,7 +374,7 @@ FROM teams t
 WHERE t.WSWin = 'Y'
 	AND (t.yearid >= 1970
 			AND t.yearid <= 2016)
-	AND t.yearid <> 1981	-- STRIKE YEAR
+	AND t.yearid NOT IN (1981, 1994) -- STRIKE YEARS
 ORDER BY t.W
 LIMIT 1;
 
@@ -366,12 +383,12 @@ LIMIT 1;
 	Doing this will probably result in an unusually small number of wins for a world series champion; determine why this is the case. Then redo your query, excluding the problem year. 
 */
 
-TO DO 
+	-- SEE ABOVE AND BELOW
 
 /*
 	How often from 1970 to 2016 was it the case that a team with the most wins also won the world series? What percentage of the time?
 	
-	A - It happened 11 times from 1970 to 2016, which is roughly 26% of the time.  If we allow for the strikes in 1994 and ____, then this changes the percentage.
+	A - It happened 11 times from 1970 to 2016, which is roughly 26% of the time.  If we allow for the strikes in 1994 and 1981, then this changes the percentage.
 */
 
 WITH cteYearWins AS
@@ -382,11 +399,11 @@ WITH cteYearWins AS
 	FROM teams
 	WHERE (yearid >= 1970
 			AND yearid <= 2016)	
-		AND yearid <> 1981	
+		AND yearid <> 1994 -- STRIKE YEAR
 	GROUP BY yearid
 ),
 cteWSWins AS
-(
+(				-- CAREFUL - YOU COULD BE COUNTING MULTIPLE TEAMS HERE
 	SELECT DISTINCT t.yearid,
 		t.name,
 		t.W,
@@ -399,7 +416,7 @@ cteWSWins AS
 			AND t.W = cyw.maxwins
 	WHERE (t.yearid >= 1970
 			AND t.yearid <= 2016)
-		AND t.yearid <> 1981
+		AND t.yearid <> 1994 -- STRIKE YEAR	
 		AND t.WSWin = 'Y'
 --	GROUP BY 1, 2, 3, 4
 	ORDER BY t.yearid
@@ -408,7 +425,84 @@ SELECT yearid,
 	name,
 	W,
 	(100 * COUNT(*) OVER() / maxwin_rows) AS pct
+	-- YOUR NUMERATOR COUNTS ROWS, BUT YOUR DENOMINATOR COUNTS YEARS - THEY SHOULD MATCH
 FROM cteWSWins;
+
+
+	-- MICHAEL HAD:
+	WITH max_wins AS
+	(
+		SELECT 
+			yearid,
+			MAX(w) AS max_wins
+		FROM teams
+		WHERE yearid >= 1970
+		GROUP BY yearid
+		ORDER BY yearid
+	),
+	team_with_most_wins AS 
+	(
+		SELECT m.yearid, 
+			max_wins, 
+			name, 
+		wswin
+		FROM max_wins m
+			INNER JOIN teams t
+				ON max_wins = w 
+				AND m.yearid = t.yearid
+	)
+	SELECT ROUND(
+	(
+		SELECT COUNT(*)
+		FROM team_with_most_wins
+		WHERE wswin = 'Y') * 100.0 / (SELECT COUNT(*) FROM team_with_most_wins), 
+	2) AS ws_win_pct;
+
+
+
+	-- JOSHUA HAD:
+	WITH max_w AS
+	(
+		SELECT 
+			yearid, 
+			max(w) AS w
+		FROM teams
+		GROUP BY yearid
+	)
+	SELECT SUM(CASE WHEN wswin = 'Y' THEN 1 ELSE 0 END) AS maxw_ws_count,
+		ROUND(100*AVG(CASE WHEN wswin = 'Y' THEN 1 ELSE 0 END),2) AS maxw_ws_perc
+	FROM teams
+		INNER JOIN max_w
+			ON teams.yearid = max_w.yearid 
+			AND teams.w = max_w.w
+	WHERE teams.yearid BETWEEN 1970 AND 2016
+		AND teams.yearid <> 1994;
+	
+	
+	
+	-- CHRIS MULVEY HAD:
+	WITH ws_winners AS 
+	(
+		SELECT yearid,
+			MAX(w)
+		FROM teams
+		WHERE yearid BETWEEN 1970 and 2016
+			AND wswin = 'Y'
+		GROUP BY 1
+		INTERSECT
+		SELECT yearid,
+			MAX(w)
+		FROM teams
+		WHERE yearid BETWEEN 1970 and 2016
+		GROUP BY 1
+		ORDER BY 1
+	)
+	SELECT ROUND((COUNT(ws.yearid)/(COUNT(t.yearid))::numeric)*100, 2) AS percentage		-- COUNTING yearid INSTEAD OF ROWS
+	FROM teams as t 
+		LEFT JOIN ws_winners AS ws 
+			ON t.yearid = ws.yearid
+	WHERE t.wswin IS NOT NULL
+	AND t.yearid BETWEEN 1970 AND 2016;
 
 
 
@@ -442,6 +536,7 @@ FROM cteWSWins;
 		AND m.teamid = w.teamidwinner
 	;
 	
+
 	
 SELECT *
 FROM seriespost
@@ -509,21 +604,173 @@ FROM cteAL ca
 ORDER BY 1;
 
 
+	-- MICHAEL HAD:
+	WITH winning_managers AS 
+	(
+		SELECT playerid
+		FROM awardsmanagers
+		WHERE awardid = 'TSN Manager of the Year'
+			AND lgid IN ('AL', 'NL')
+		GROUP BY playerid
+		HAVING COUNT(DISTINCT lgid) = 2
+	)
+	SELECT
+		namefirst || ' ' || namelast AS manager_name,
+		yearid,
+		name
+	FROM awardsmanagers
+		INNER JOIN people
+			USING(playerid)
+		INNER JOIN managers
+			USING (playerid, yearid)
+		INNER JOIN teams
+			USING (teamid, yearid)
+	WHERE awardid = 'TSN Manager of the Year'
+		AND playerid IN 
+		(
+			SELECT * 
+			FROM winning_managers
+		)
+	ORDER BY manager_name, yearid;
+
+
+
+	-- ROHIT VENKAT HAD:
+	SELECT
+		namefirst || ' ' || namelast AS full_name,
+		yearid,
+		teamid,
+		lgid
+	FROM awardsmanagers
+		INNER JOIN 
+		(
+			SELECT 
+				playerid
+			FROM awardsmanagers
+			WHERE awardid = 'TSN Manager of the Year'
+			GROUP BY playerid
+			HAVING COUNT(DISTINCT lgid) = 2 
+		) AS both_leagues
+			USING (playerid)
+		INNER JOIN people
+			USING(playerid)
+		INNER JOIN managers
+			USING (playerid, yearid, lgid);
+
+
+
+	-- JAKE RANDOLPH HAD:
+	select *
+	from awardsmanagers
+	where yearid= 1936
+	
+	
+	-- JOINS FROM AWARDS INSTEAD OF MANAGERS
+	With NL AS 
+	(
+		select distinct (namefirst||' '||namelast) as person_name, 
+			name, 
+			awardsmanagers.yearid, 
+			awardid
+		from managers
+			full join awardsmanagers
+				using (playerid,yearid)
+			full join people
+				using (playerid)
+			full join teams
+				using (teamid, yearid)
+		where awardid= 'TSN Manager of the Year'
+			and managers.lgid= 'NL'
+		order by awardsmanagers.yearid
+	),
+	AL AS 
+	(
+		select distinct (namefirst||' '||namelast) as person_name, 
+			name, 
+			awardsmanagers.yearid, 
+			awardid
+		from managers
+			full join awardsmanagers
+				using (playerid, yearid)
+			full join people
+				using (playerid)
+			full join teams
+				using (teamid, yearid)
+		where awardid= 'TSN Manager of the Year'
+		and managers.lgid= 'AL'
+		order by awardsmanagers.yearid
+	)	
+	select *
+	from NL
+		inner join AL
+			using (person_name, awardid)
+	order by person_name;
+
+
+
+	-- BRYAN SAYS HE HAS A DENSE_RANK() HACK
+	with winners as 
+	(
+	    select playerid,
+	           yearid,
+	           lgid,
+	           -- hack for counting distinct values in a window function
+	           -- https://www.sqlservercentral.com/forums/topic/how-to-distinct-count-with-windows-functions-i-e-over-and-partition-by
+	           -- the first dense_rank assigns a 1 to the first unique lgids then a 2 to the next unique lgid
+	           -- the second dense_rank reverses the order, assigning a 2 to the first unique lgid then a 2 to the next unique lgids
+	           -- subtracting 1 then makes all values equal across rows (in this case 2 since we're only dealing with two leagues)
+	           case when dense_rank() over(partition by playerid order by lgid) + dense_rank() over(partition by playerid order by lgid desc) - 1 = 2
+	               then true
+	               else false
+	               end as won_in_both_leagues
+	    from awardsmanagers
+	    where awardid = 'TSN Manager of the Year'
+	    	and lgid in ('NL', 'AL')
+	),
+	 managed_teams as 
+	 (
+	    select distinct m.playerid,
+	          t2.franchname,
+	          m.teamid,
+	          m.yearid,
+	          t.lgid,
+	          tsn.won_in_both_leagues
+	    from managers m
+	    	inner join winners tsn
+	    		on tsn.playerid = m.playerid
+	    		and tsn.yearid = m.yearid
+	    	inner join teams t
+	    		on t.teamid = m.teamid
+	    	inner join teamsfranchises t2
+	    		on t.franchid = t2.franchid
+	 )
+	select mt.playerid,
+	       concat(p.namefirst, ' ', p.namelast) as full_name,
+	       mt.franchname team_name,
+	       mt.yearid as year,
+	       case when mt.lgid = 'AL' then 'American' else 'National' end as league
+	from managed_teams as mt
+		inner join people as p
+			on p.playerid = mt.playerid
+	where mt.won_in_both_leagues = true
+	order by playerid desc;
+
+
 /*
 	7. Which pitcher was the least efficient in 2016 in terms of salary / strikeouts? Only consider pitchers who started at least 10 games (across all teams). Note that pitchers often play for more than one team in a season, so be sure that you are counting all stats for each player.
 	
-	A - By the calculation below, James Shields is the least efficient, with 135 strike-outs for a cool $42,000,000.
+	A - By the calculation below, James Shields is the least efficient, with 135 strike-outs for a cool $42,000,000.  If my calculations are right, this cost $311,111.11 per strike-out.
 */
 
 SELECT DISTINCT -- p.playerid,
 	pl.namefirst || ' ' || pl.namelast AS playername,
 --	pi.teamid,
-	SUM(pi.GS) AS games_started,
+--	SUM(pi.GS) AS games_started,
 --	pi.yearid,
 --	s.yearid,
 	SUM(pi.so) AS strikeouts,
-	SUM(s.salary) AS total_salary,
-	SUM(pi.so) / SUM(s.salary) AS efficiency	-- IS THIS RIGHT?
+	SUM(s.salary)::numeric::money AS total_salary,
+	SUM(s.salary)::numeric::money / SUM(pi.so) AS efficiency	-- IS THIS RIGHT?
 FROM people pl
 	INNER JOIN pitching pi
 		ON pl.playerid = pi.playerid
@@ -531,85 +778,308 @@ FROM people pl
 		ON pl.playerid = s.playerid
 WHERE pi.yearid = 2016
 	AND s.yearid = 2016
-	AND pi.GS >= 10
+--	AND pi.GS >= 10
 GROUP BY 1
-ORDER BY efficiency;
+HAVING SUM(pi.GS) >= 10
+ORDER BY efficiency DESC;
+
+
+	-- OR?
+	
+
+SELECT DISTINCT pi.playerid,
+	pl.namefirst || ' ' || pl.namelast AS playername,
+	pi.teamid,
+--	SUM(pi.GS) AS games_started,
+--	pi.yearid,
+--	s.yearid,
+	s.salary::numeric::money AS total_salary,
+	SUM(pi.so) AS strikeouts,
+	s.salary::numeric::money / SUM(pi.so) AS efficiency	-- IS THIS RIGHT?
+FROM pitching pi
+	INNER JOIN people pl
+		ON pl.playerid = pi.playerid
+	INNER JOIN salaries s
+		ON pl.playerid = s.playerid
+WHERE pi.yearid = 2016
+	AND s.yearid = 2016
+--	AND pi.GS >= 10
+GROUP BY 1, 2. 3, 4
+HAVING SUM(pi.GS) >= 10
+ORDER BY efficiency DESC;
+
+
+/*
+
+VERONICA SAID:
+
+FYI, re: Tony La Russa, there seems to be a discrepancy in the league ID across the awardsmanagers and managers/teams tables. He won the TSN award three times (1983, 1988, and 1992); in 1983, on the awardsmanagers table, the league ID is 'ML' but, on the managers and teams tables, his 1983 league ID is 'AL' (for the Chicago White Sox). No idea what the ML league is, but if you're counting number of leagues based on the awardsmanagers table or the managers/teams table, you'll get different answers. If you're curious, you can play around with this query:
+*/
+
+SELECT 
+	m.playerid
+	, a.awardid
+	, t.yearid
+	, t.lgid AS teams_league
+	, m.lgid AS managers_league
+	, a.lgid AS awardsmanagers_league
+	, t.teamid
+FROM teams t
+JOIN managers m
+	USING(teamid, yearid)
+-- comment out the next four lines to see every year of the player's management career
+JOIN awardsmanagers a
+	ON a.playerid = m.playerid
+	AND a.yearid = m.yearid
+	AND a.awardid LIKE 'TSN%' -- Check for the TSN award year only
+WHERE m.playerid = 'larusto01';
+
+
+
+	-- JOSHUA HAD:
+	SELECT
+		namefirst,
+		namelast,
+		(MAX(salary)/SUM(so))::numeric::money AS salary_per_so
+	FROM pitching
+	INNER JOIN people
+		USING (playerid)
+	INNER JOIN salaries
+		USING (playerid, yearid)
+	WHERE yearid = 2016
+	GROUP BY playerid, namefirst, namelast
+	HAVING sum(gs) >= 10
+	ORDER BY salary_per_so DESC;
+
+
+
+	-- MICHAEL HAD:
+	WITH full_pitching AS 
+	(
+		SELECT 
+			playerid, 
+			SUM(so) AS so,
+			SUM(g) AS g,
+			SUM(gs) AS gs
+		FROM pitching
+		WHERE yearid = 2016
+		GROUP BY playerid
+	),
+	full_salary AS 
+	(
+		SELECT playerid, 
+			SUM(salary) AS salary
+		FROM salaries
+		WHERE yearid = 2016
+		GROUP BY playerid
+	)
+	SELECT 
+		namefirst || ' ' || namelast AS fullname,
+		salary / so AS dollars_per_so
+	FROM full_pitching
+		INNER JOIN full_salary
+			USING(playerid)
+		INNER JOIN people
+			USING(playerid)
+	WHERE g >= 10
+	ORDER BY dollars_per_so DESC;
+
+
+
+	-- VAMSI HAD:
+	WITH so AS
+	(
+		SELECT
+			playerid,
+			SUM(so) AS so
+		FROM pitching
+		WHERE yearid = 2016 AND gs >= 10
+		GROUP BY playerid
+	),
+	salary AS
+	(
+		SELECT
+			playerid,
+			SUM(salary) AS salary
+		FROM salaries
+		WHERE yearid = 2016
+		GROUP BY playerid
+	)
+	SELECT
+		namefirst || ' ' || namelast AS name, 
+		(salary / so)::numeric AS efficiency
+	FROM so
+	JOIN salary
+	USING(playerid)
+	JOIN people
+	USING(playerid)
+	ORDER BY efficiency DESC
+--	LIMIT 1;
+
+
+	-- CONNOR HAD:
+	SELECT pitching.playerid, 
+		ROUND(SUM(salaries.salary)/SUM(pitching.so)) AS dollar_per_so, 
+		(people.namefirst|| ' ' || people.namelast) AS name
+	FROM pitching
+		LEFT JOIN salaries
+			ON pitching.playerid = salaries.playerid
+			AND pitching.yearid = salaries.yearid
+		LEFT JOIN people
+			ON pitching.playerid = people.playerid
+	WHERE pitching.yearid = 2016
+		AND pitching.so IS NOT NULL
+		AND salaries.salary IS NOT NULL
+	GROUP BY pitching.playerid, (people.namefirst|| ' ' || people.namelast)
+	HAVING SUM(gs) >= 10
+	ORDER BY dollar_per_so DESC;
+
+
+
+	-- ALEX HAD:
+	SELECT 
+		namefirst||' '||namelast name,
+		ROUND((AVG(salary)/SUM(so))::numeric,2) salary_per_so
+	FROM pitching p
+	INNER JOIN people pl
+	USING (playerid)
+	INNER JOIN salaries s
+	USING (playerid)
+	WHERE p.yearid = 2016
+		AND gs>=10
+	GROUP BY name, p.yearid, p.playerid
+	ORDER BY 2 DESC;
 
 
 /*
 	8. Find all players who have had at least 3000 career hits. Report those players' names, total number of hits, and the year they were inducted into the hall of fame (If they were not inducted into the hall of fame, put a null in that column.) Note that a player being inducted into the hall of fame is indicated by a 'Y' in the **inducted** column of the halloffame table.
 */
 
-	TO DO
 
--- GETTING DUPLICATES, e.g. Honus Wagner - WHY?
-SELECT DISTINCT -- pl.playerid,
-	pl.namefirst || ' ' || pl.namelast AS playername,
-	CASE WHEN hof.inducted = 'Y' THEN hof.yearid 			ELSE NULL END AS HOF_year,
-	SUM(b.H) AS career_hits
-FROM people pl
-	INNER JOIN batting b
-		ON pl.playerid = b.playerid
+		-- GETTING DUPLICATES - WHY? --
+
+WITH cte3000Hits AS 
+(	
+	SELECT DISTINCT playerid,
+		SUM(h) AS career_hits
+	FROM batting
+	GROUP BY 1
+	HAVING SUM(h) >= 3000
+--	ORDER BY 1
+)
+SELECT DISTINCT pl.namefirst || ' ' || pl.namelast AS playername,
+	CASE WHEN hof.inducted = 'Y' THEN hof.yearid ELSE NULL END AS HOF_year,
+	SUM(career_hits)
+--	(
+--		SELECT CASE WHEN hof.inducted = 'Y' THEN hof.yearid ELSE NULL END AS HOF_year
+--		FROM halloffame hof
+--		WHERE hof.playerid IN
+--		(
+--			SELECT playerid
+--		 	FROM cte3000Hits
+--		)
+--	)
+FROM cte3000Hits c3h
+	INNER JOIN people pl
+		ON c3h.playerid = pl.playerid
 	INNER JOIN halloffame hof
-		ON pl.playerid = hof.playerid
+		ON c3h.playerid = hof.playerid
 GROUP BY 1, 2
-HAVING SUM(b.H) >= 3000
-ORDER BY career_hits DESC;
+ORDER BY 1
+;
+
+
+
+	-- HITS ARE WAY TOO HIGH - GETTING DUPLICATES, e.g. Honus Wagner - WHY?
+	SELECT DISTINCT -- pl.playerid,
+		pl.namefirst || ' ' || pl.namelast AS playername,
+		CASE WHEN hof.inducted = 'Y' THEN hof.yearid 			ELSE NULL END AS HOF_year,
+		SUM(b.H) AS career_hits
+	FROM people pl
+		INNER JOIN batting b
+			ON pl.playerid = b.playerid
+		INNER JOIN halloffame hof
+			ON pl.playerid = hof.playerid
+	GROUP BY 1, 2
+	HAVING SUM(b.H) >= 3000
+	ORDER BY career_hits DESC;
 
 
 /*
 	9. Find all players who had at least 1,000 hits for two different teams. Report those players' full names.
 */
-
-	TO DO - GETTING NO RESULTS -- WHY?
-
-WITH cteMultiTeams AS
+	
+WITH cteOver1000 AS
 (
 	SELECT DISTINCT playerid AS id,
-		teamid
-	--	COUNT(teamid) AS teamcount
-	FROM people
-		INNER JOIN batting
-			USING(playerid)
---	GROUP BY playerid
-	ORDER BY id
-)
+		teamid,
+		SUM(H) AS hits
+	FROM batting
+	GROUP BY 1, 2
+	HAVING SUM(H) >= 1000
+		AND COUNT(teamid) > 1
+	-- ORDER BY 1, 2
+)	
 SELECT -- pl.playerid,
-	pl.namefirst || ' ' || pl.namelast AS playername,
-	t.teamid,
-	b.H AS hits
+	pl.namefirst || ' ' || pl.namelast AS playername
 FROM people pl
-	INNER JOIN batting b
-		ON pl.playerid = b.playerid
-	INNER JOIN teams t
-		ON b.teamid = t.teamid
--- WHERE b.H >= 1000
---	AND pl.playerid IN
---	(
---		SELECT id
---		FROM cteMultiTeams
---		GROUP BY id
---		HAVING COUNT(*) > 1
---	)
-ORDER BY hits DESC;
+WHERE playerid IN
+(
+	SELECT id
+	FROM cteOver1000
+)
+ORDER BY 1;
 
 
+
+	-- TESTING HOW HITS READ IN THE TABLE
+	SELECT playerid,
+	--	yearid,
+		teamid,
+		SUM(h)
+	FROM batting
+	WHERE playerid = 'aaronha01'
+	GROUP BY 1, 2
+	
+	
 /*
 	10. Find all players who hit their career highest number of home runs in 2016. Consider only players who have played in the league for at least 10 years, and who hit at least one home run in 2016. Report the players' first and last names and the number of home runs they hit in 2016.
 */
 
 	TO DO
 
--- HIGH RUN YEAR QUERY
-SELECT DISTINCT pl.playerid,
-	b.yearid,
-	MAX(b.HR) AS homeruns
-FROM people pl
-	INNER JOIN batting b
-		ON pl.playerid = b.playerid
-GROUP BY 1, 2
-ORDER BY 1, 3 DESC;
 
+	-- WHO HAD HOME RUNS IN 2016
+	SELECT DISTINCT playerid,
+		HR AS homeruns_2016
+	--	HR
+	FROM batting
+	WHERE yearid = 2016
+		AND HR >= 1
+	ORDER BY 1;
+
+
+	-- TESTING BEST SEASON
+	WITH cteRunsPerSeason AS
+	(
+		SELECT DISTINCT playerid AS player,
+			yearid AS year,
+			HR AS homeruns
+		--	HR
+		FROM batting
+	--	WHERE playerid = 'aaronha01'
+	--	 GROUP BY 1, 2
+	--	HAVING COUNT(yearid) >= 10
+	--	ORDER BY 1, 3 DESC;
+	)
+	SELECT DISTINCT player,
+	--	year,
+		MAX(homeruns) AS max_homeruns
+	FROM cteRunsPerSeason
+	GROUP BY player
+	ORDER BY player
+	
+	
 
 -- FINAL QUERY
 SELECT DISTINCT -- pl.playerid,
@@ -621,6 +1091,7 @@ FROM people pl
 	INNER JOIN teams t
 		ON b.teamid = t.teamid
 WHERE b.yearid = 2016
+	AND b.HR >= 1
 --	AND pl.playerid IN
 --	(
 --		SELECT id
@@ -632,6 +1103,46 @@ GROUP BY 1, 2
 ORDER BY b.HR DESC;
 
 
+	-- WHO HAD HOME RUNS IN 2016
+	SELECT DISTINCT playerid,
+		HR AS homeruns_2016
+	--	HR
+	FROM batting
+	WHERE yearid = 2016
+		AND HR >= 1
+	ORDER BY 1;
+
+
+	-- PLAYERS WHO WERE IN THE LEAGUE 10+ YEARS
+	SELECT DISTINCT playerid,
+		COUNT(yearid) AS yr_cnt
+	FROM batting
+	GROUP BY 1
+	HAVING COUNT(yearid) >= 10
+	ORDER BY 1;
+
+
+	-- TESTING BEST SEASON
+	WITH cteRunsPerSeason AS
+	(
+		SELECT DISTINCT playerid AS player,
+			yearid AS year,
+			HR AS homeruns
+		--	HR
+		FROM batting
+	--	WHERE playerid = 'aaronha01'
+	--	 GROUP BY 1, 2
+	--	HAVING COUNT(yearid) >= 10
+	--	ORDER BY 1, 3 DESC;
+	)
+	SELECT DISTINCT player,
+	--	year,
+		MAX(homeruns) AS max_homeruns
+	FROM cteRunsPerSeason
+	GROUP BY player
+	ORDER BY player
+	
+
 /*
 After finishing the above questions, here are some open-ended questions to consider.
 
@@ -640,24 +1151,41 @@ After finishing the above questions, here are some open-ended questions to consi
 	11. Is there any correlation between number of wins and team salary? Use data from 2000 and later to answer this question. As you do this analysis, keep in mind that salaries across the whole league tend to increase together, so you may want to look on a year-by-year basis.
 */
 
+	TO DO
+	
+	-- YEAR BY YEAR - USING ROLLING WINDOW FUNCTION? --
+
 -- PSQL HAS corr() FN
 
--- GET SALARY INFO BY YEAR BY TEAM 1st? >= 2000
-
-SELECT DISTINCT t.name AS teamname,
-	t.yearid AS teamyear,
-	SUM(s.salary) AS total_salary
-FROM teams t
-	INNER JOIN managers m
-		ON t.teamid = m.teamid
-		AND t.yearid = m.yearid
-	INNER JOIN salaries s
-		ON m.teamid = s.teamid
-		AND m.yearid = s.yearid
-WHERE t.yearid >= 2000
-GROUP BY 1
-ORDER BY 2 DESC;
-
+WITH cteWins AS
+(
+	SELECT DISTINCT teamid AS tid,
+		yearid as yid,
+		SUM(W) AS yearly_wins
+	FROM teams
+	GROUP BY 1, 2
+),
+cteSalary AS
+(
+	SELECT DISTINCT t.teamid,
+		t.name AS teamname,
+		t.yearid AS teamyear,
+		SUM(s.salary)::numeric::money AS yearly_salary
+	FROM teams t
+		INNER JOIN managers m
+			ON t.teamid = m.teamid
+			AND t.yearid = m.yearid
+		INNER JOIN salaries s
+			ON m.teamid = s.teamid
+			AND m.yearid = s.yearid
+	WHERE t.yearid >= 2000
+	GROUP BY 1,2
+--	ORDER BY 1, 2;
+)
+SELECT corr(cw.yearly_wins, cs.yearly_salary)
+FROM cteWins cw
+	INNER JOIN cteSalary cs
+		ON cw.tid = cs.tid
 
 
 /*
