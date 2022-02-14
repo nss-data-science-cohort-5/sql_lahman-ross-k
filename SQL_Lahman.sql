@@ -1149,13 +1149,11 @@ After finishing the above questions, here are some open-ended questions to consi
 **Open-ended questions**
 
 	11. Is there any correlation between number of wins and team salary? Use data from 2000 and later to answer this question. As you do this analysis, keep in mind that salaries across the whole league tend to increase together, so you may want to look on a year-by-year basis.
+	
+	A - If we approach this with a "simple" correlation, i.e. not looking at it year by year, then the correlation is only 16%, which I think is negligible.  A "year-by-year basis" suggests some kind of rolling window function to me, which I mean to try after I have done more of the window assignment.
 */
 
-	TO DO
-	
-	-- YEAR BY YEAR - USING ROLLING WINDOW FUNCTION? --
-
--- PSQL HAS corr() FN
+	-- TO DO - YEAR BY YEAR - USING ROLLING WINDOW FUNCTION? --
 
 WITH cteWins AS
 (
@@ -1163,6 +1161,7 @@ WITH cteWins AS
 		yearid as yid,
 		SUM(W) AS yearly_wins
 	FROM teams
+	WHERE yearid >= 2000
 	GROUP BY 1, 2
 ),
 cteSalary AS
@@ -1179,13 +1178,13 @@ cteSalary AS
 			ON m.teamid = s.teamid
 			AND m.yearid = s.yearid
 	WHERE t.yearid >= 2000
-	GROUP BY 1,2
+	GROUP BY 1,2, 3
 --	ORDER BY 1, 2;
 )
-SELECT corr(cw.yearly_wins, cs.yearly_salary)
+SELECT corr(cw.yearly_wins, cs.yearly_salary::numeric)
 FROM cteWins cw
 	INNER JOIN cteSalary cs
-		ON cw.tid = cs.tid
+		ON cw.tid = cs.teamid
 
 
 /*
@@ -1209,6 +1208,7 @@ FROM cteWins cw
 	   GROUP BY 1
  --  ORDER BY 1
 	) sq;
+   
    
    
    -- WITH homegames AND teams TABLES
@@ -1235,8 +1235,95 @@ FROM cteWins cw
    
 /* 
 	b. Do teams that win the world series see a boost in attendance the following year? What about teams that made the playoffs? Making the playoffs means either being a division winner or a wild card winner.
+	
+	A - The year after winning a World Series, a team's attendance increases roughly 48.46% of the time--almost a coin flip but a qualified "no."
+	The year after making the playoffs, a team's attendance increases roughly 50.78% of the time--almost a coin flip but a qualified "yes."
 */
 
+-- FIRST QUESTION - WS WINNERS --
+WITH cteWSYear AS
+(
+	SELECT DISTINCT teamid AS tid,
+		yearid AS ws_yr,
+		COALESCE(attendance, 0) AS ws_attendance
+	FROM teams
+	WHERE wswin = 'Y'
+	-- GROUP BY 1, 2
+	-- ORDER BY 1, 2
+)
+, cteAfterWS AS
+(
+	SELECT t.teamid,
+		t.yearid AS yr_after,
+		COALESCE(attendance, 0) AS after_ws_attendance
+	FROM teams t
+		INNER JOIN cteWsYear cw
+			ON t.teamid = cw.tid
+	WHERE t.yearid = cw.ws_yr + 1
+--	ORDER BY 1, 2
+)
+, cteIncreases AS
+(
+	SELECT cws.tid,
+		CASE WHEN caw.after_ws_attendance > cws.ws_attendance THEN 1 ELSE 0 END AS increase,
+		caw.after_ws_attendance - cws.ws_attendance AS attendance_diff
+	FROM cteAfterWS caw
+		INNER JOIN cteWSYear cws
+			ON cws.tid = caw.teamid
+	-- ORDER BY 1
+)
+, cteIncreaseCnt AS
+(
+	SELECT SUM(increase) AS increase_sums, 
+		COUNT(*) AS row_cnt
+	FROM cteIncreases
+)
+SELECT ROUND((100 * increase_sums::numeric) / row_cnt::numeric, 2) AS ws_increase_rate
+FROM cteIncreaseCnt;
+
+
+
+-- SECOND QUESTION - DIVISION OR WILD-CARD WINNERS --
+WITH ctePlayoffYear AS
+(
+	SELECT DISTINCT teamid AS tid,
+		yearid AS playoff_yr,
+		COALESCE(attendance, 0) AS playoff_attendance
+	FROM teams
+	WHERE divwin = 'Y'
+		OR wcwin = 'Y'
+	-- GROUP BY 1, 2
+	-- ORDER BY 1, 2
+)
+, cteAfterPlayoffs AS
+(
+	SELECT t.teamid,
+		t.yearid AS yr_after_po,
+		COALESCE(attendance, 0) AS after_playoff_attendance
+	FROM teams t
+		INNER JOIN ctePlayoffYear cp
+			ON t.teamid = cp.tid
+	WHERE t.yearid = cp.playoff_yr + 1
+--	ORDER BY 1, 2
+)
+, cteIncreases AS
+(
+	SELECT cpy.tid,
+		CASE WHEN cap.after_playoff_attendance > cpy.playoff_attendance THEN 1 ELSE 0 END AS increase,
+		cap.after_playoff_attendance - cpy.playoff_attendance AS playoff_attendance_diff
+	FROM cteAfterPlayoffs cap
+		INNER JOIN ctePlayoffYear cpy
+			ON cpy.tid = cap.teamid
+	-- ORDER BY 1
+)
+, cteIncreaseCnt AS
+(
+	SELECT SUM(increase) AS increase_sums, 
+		COUNT(*) AS row_cnt
+	FROM cteIncreases
+)
+SELECT ROUND((100 * increase_sums::numeric) / row_cnt::numeric, 2) AS playoff_increase_rate
+FROM cteIncreaseCnt;
 
 
 /*
